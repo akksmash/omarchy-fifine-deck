@@ -1,0 +1,131 @@
+# Fifine AmpliGame D6 key bindings.
+#
+# Key indices are as the deck REPORTS them when pressed, in reading order:
+#
+#     top     1  2  3  4  5
+#     middle  6  7  8  9 10
+#     bottom 11 12 13 14 15
+#
+# The screens are numbered differently (row-flipped); deck-icons handles that,
+# so only these numbers matter here.
+# Reload: systemctl --user restart fifine-deckd && deck-icons
+
+[keys."1"]
+label = "Claude Code (herd)"
+cmd = "~/.local/bin/steve-term-launch"
+icon = ""
+color = "#e5a04c"
+caption = "Claude"
+art = "an abstract AI spark starburst"
+
+[keys."2"]
+label = "Steve Console"
+cmd = "~/.local/bin/steve-open console"
+icon = ""
+color = "#d19a66"
+caption = "Console"
+art = "a control console with gauges"
+
+[keys."3"]
+label = "Steve WarDeck"
+cmd = "~/.local/bin/steve-open wardeck"
+icon = ""
+color = "#e5c07b"
+caption = "WarDeck"
+art = "a command dashboard speedometer"
+
+[keys."4"]
+label = "Steve sessions"
+cmd = "omarchy-shell shell toggle ak.steve-sessions '{}'"
+icon = ""
+color = "#c9a227"
+caption = "Sessions"
+art = "a group of people in a session"
+
+[keys."5"]
+label = "Terminal"
+cmd = "uwsm-app -- alacritty"
+icon = ""
+color = "#abb2bf"
+caption = "Terminal"
+art = "a terminal prompt chevron and cursor"
+
+[keys."6"]
+label = "Browser"
+cmd = "omarchy-launch-browser"
+icon = ""
+color = "#56b6c2"
+caption = "Browser"
+art = "a simple globe with latitude and longitude lines"
+
+[keys."7"]
+label = "localhost:3000"
+cmd = "omarchy-launch-webapp http://localhost:3000"
+icon = ""
+color = "#61afef"
+caption = "Preview"
+art = "a magnifying glass over a rectangular window frame"
+
+[keys."8"]
+label = "Dev server"
+cmd = "~/.local/bin/deck-dev start"
+icon = ""
+color = "#98c379"
+caption = "Start Dev"
+art = "a rocket ship launching upward"
+
+[keys."9"]
+label = "Stop dev server"
+cmd = "~/.local/bin/deck-dev stop"
+icon = ""
+color = "#e06c75"
+caption = "Stop Dev"
+art = "a stop square halting a server"
+
+[keys."10"]
+label = "localhost:5173 (vite)"
+cmd = "omarchy-launch-webapp http://localhost:5173"
+icon = ""
+color = "#c678dd"
+caption = "Vite"
+art = "a lightning bolt for a fast build tool"
+
+[keys."11"]
+label = "YouTube"
+cmd = "omarchy-launch-webapp https://youtube.com"
+icon = ""
+color = "#ff4d4d"
+caption = "YouTube"
+art = "the YouTube play button logo"
+
+[keys."12"]
+label = "Gmail"
+cmd = "omarchy-launch-webapp https://mail.google.com"
+icon = ""
+color = "#ea6a5c"
+caption = "Gmail"
+art = "an email envelope"
+
+[keys."13"]
+label = "Thunderbird"
+cmd = "uwsm-app -- thunderbird"
+icon = ""
+color = "#4aa3df"
+caption = "Mail"
+art = "a mail client inbox tray"
+
+[keys."14"]
+label = "File manager"
+cmd = "uwsm-app -- nautilus"
+icon = ""
+color = "#f0b429"
+caption = "Files"
+art = "a file folder"
+
+[keys."15"]
+label = "Omarchy menu"
+cmd = "omarchy-menu toggle root"
+icon = ""
+color = "#5fb3d4"
+caption = "Menu"
+art = "the Arch Linux logo"

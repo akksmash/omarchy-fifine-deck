@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""fifine-deckd - use a Fifine AmpliGame D6 (USB 3142:0060) as a macro pad.
+
+The deck ships mute: it emits nothing until it receives a MOD command on its
+vendor HID interface, which is why it looks dead on Linux. Once activated it
+streams key events as:
+
+    41 43 4b 00 00 4f 4b 00 00 KK SS      "ACK\0\0OK\0\0" + key + state
+                               ^^ ^^      key index, 01=down 00=up
+
+Its LCD screens do NOT respond to the mirajazz image protocol at either packet
+size, so this daemon deliberately does input only.
+
+    fifine-deckd learn    print key indices as you press them
+    fifine-deckd run      run the daemon, executing configured commands
+"""
+import glob, os, select, shlex, subprocess, sys, time, tomllib
+
+CONFIG = os.path.expanduser("~/.config/fifine-deck/keys.toml")
+PKT = 512
+ACK_PREFIX = bytes([0x41, 0x43, 0x4B, 0x00, 0x00, 0x4F, 0x4B, 0x00, 0x00])
+KEEPALIVE_SECS = 30
+
+
+def crt(*payload):
+    return bytes([0x00, 0x43, 0x52, 0x54, 0x00, 0x00]) + bytes(payload)
+
+
+A = lambda s: tuple(s.encode())
+MOD_ACTIVATE = crt(*A("MOD"), 0x00, 0x00, 0x30 + 1)   # the wake-up nobody had found
+CONNECT = crt(*A("CONNECT"))
+
+
+def find_vendor_node():
+    """The vendor interface is 1.0; the keyboard interface is 1.1. Match on the
+    interface suffix rather than the USB port so it survives being replugged."""
+    for d in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        rp = os.path.realpath(d)
+        if "3142:0060" in rp and ":1.0/" in rp:
+            return "/dev/" + os.path.basename(d)
+    return None
+
+
+def write(fd, pkt):
+    os.write(fd, pkt + b"\x00" * (1 + PKT - len(pkt)))
+
+
+def activate(fd):
+    """MOD 1 turns key reporting on. Deliberately no CONNECT: it clears the
+    key screens, and key events arrive fine without it."""
+    write(fd, MOD_ACTIVATE)
+    time.sleep(0.2)
+
+
+def load_config():
+    if not os.path.exists(CONFIG):
+        return {}
+    with open(CONFIG, "rb") as f:
+        raw = tomllib.load(f)
+    out = {}
+    for k, v in raw.get("keys", {}).items():
+        try:
+            out[int(k)] = v
+        except ValueError:
+            print(f"config: ignoring non-numeric key {k!r}", file=sys.stderr)
+    return out
+
+
+def run_action(entry):
+    cmd = entry.get("cmd", "").strip()
+    if not cmd:
+        return
+    label = entry.get("label", cmd)
+    print(f"  -> {label}: {cmd}", flush=True)
+    try:
+        subprocess.Popen(["/bin/bash", "-lc", cmd],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except Exception as e:
+        print(f"  !! failed: {e}", file=sys.stderr, flush=True)
+
+
+def events(fd):
+    """Yield (key, state) pairs, tolerating partial and batched reports."""
+    buf = os.read(fd, 4096)
+    i = 0
+    while True:
+        j = buf.find(ACK_PREFIX, i)
+        if j < 0 or j + len(ACK_PREFIX) + 1 >= len(buf):
+            return
+        yield buf[j + 9], buf[j + 10]
+        i = j + 11
+
+
+def main(mode):
+    cfg = load_config() if mode == "run" else {}
+    if mode == "run" and not cfg:
+        print(f"No key bindings in {CONFIG}. Run 'fifine-deckd learn' first.",
+              file=sys.stderr)
+
+    while True:
+        path = find_vendor_node()
+        if not path:
+            print("deck not present; waiting...", flush=True)
+            time.sleep(3)
+            continue
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+        except OSError as e:
+            print(f"cannot open {path}: {e.strerror}; waiting...", flush=True)
+            time.sleep(3)
+            continue
+
+        print(f"deck active on {path}"
+              + (" - press keys to see their indices" if mode == "learn" else ""),
+              flush=True)
+        activate(fd)
+        try:
+            while True:
+                r, _, _ = select.select([fd], [], [], 1.0)
+                if r:
+                    for key, state in events(fd):
+                        if state != 1:          # act on press, ignore release
+                            continue
+                        if mode == "learn":
+                            print(f"  key index {key}  (0x{key:02x})", flush=True)
+                        elif key in cfg:
+                            run_action(cfg[key])
+                        else:
+                            print(f"  key {key}: unbound", flush=True)
+        except OSError:
+            print("deck disconnected; will retry", flush=True)
+        finally:
+            os.close(fd)
+
+
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else "run"
+    if mode not in ("run", "learn"):
+        sys.exit(__doc__)
+    try:
+        main(mode)
+    except KeyboardInterrupt:
+        print()

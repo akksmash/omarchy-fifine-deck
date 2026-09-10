@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Generate key artwork with OpenAI images, cached to ~/.local/share/fifine-deck/art.
+
+Art is generated once and reused; deck-icons composites the caption bar on top.
+The API key comes from the login keyring, never from a file:
+    secret-tool store --label="OpenAI API key" service openai account "$USER"
+"""
+import base64, json, os, subprocess, sys, tomllib, urllib.request
+import concurrent.futures as cf
+
+ART = os.path.expanduser("~/.local/share/fifine-deck/art")
+CONFIG = os.path.expanduser("~/.config/fifine-deck/keys.toml")
+
+PROMPT = (
+ "A single flat vector icon representing {subject}. One bold minimal symbol, thick "
+ "strokes, centered, filling most of the frame. Solid saturated {color} background. "
+ "High contrast, flat design, sharp clean edges. Absolutely no text, no letters, no "
+ "numbers, no words anywhere. No shadows, no gradients on the symbol, no border, no "
+ "scenery. Must stay instantly readable when scaled down to 85x85 pixels."
+)
+
+def key():
+    return subprocess.run(["secret-tool","lookup","service","openai","account",os.environ.get("USER","akksmash")],
+                          capture_output=True, text=True).stdout.strip()
+
+K = key()
+if not K:
+    sys.exit("no OpenAI key in keyring")
+
+def gen(idx, subject, color):
+    out = f"{ART}/{idx}.png"
+    if os.path.exists(out) and "--force" not in sys.argv:
+        return idx, "cached"
+    body = json.dumps({"model":"gpt-image-1",
+                       "prompt":PROMPT.format(subject=subject, color=color),
+                       "size":"1024x1024","n":1}).encode()
+    req = urllib.request.Request("https://api.openai.com/v1/images/generations", data=body,
+        headers={"Authorization": f"Bearer {K}", "Content-Type":"application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=240) as r:
+            d = json.load(r)
+        open(out,"wb").write(base64.b64decode(d["data"][0]["b64_json"]))
+        return idx, "generated"
+    except Exception as e:
+        return idx, f"FAILED {type(e).__name__} {str(e)[:120]}"
+
+keys = tomllib.load(open(CONFIG,"rb"))["keys"]
+jobs = []
+for i in range(1,16):
+    spec = keys.get(str(i), {})
+    subject = spec.get("art") or spec.get("caption") or spec.get("label","")
+    jobs.append((i, subject, spec.get("color","#3366cc")))
+
+with cf.ThreadPoolExecutor(max_workers=5) as ex:
+    for idx, status in ex.map(lambda j: gen(*j), jobs):
+        print(f"  {idx:>2}  {status}", flush=True)
+print(f"art in {ART}")
