@@ -38,6 +38,7 @@ from ..paths import CACHE_DIR, CONFIG_FILE, ensure_dirs
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 TRIGGER = os.path.join(CACHE_DIR, "redraw.trigger")
+COOKIE = "deck_session"
 
 # A key's command runs in a shell; a test run must not hang the editor.
 TEST_TIMEOUT = 10
@@ -107,14 +108,36 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.verbose:
             super().log_message(fmt, *args)
 
+    def _cookie_token(self) -> str:
+        raw = self.headers.get("Cookie") or ""
+        for part in raw.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == COOKIE:
+                return v
+        return ""
+
     def _authorised(self, *, mutating: bool) -> bool:
+        """Token in a header, a cookie, or (for plain GETs) the query string.
+
+        The browser cannot attach a token to a <link> or <script> request, so
+        loading the page hands out a SameSite=Strict session cookie and the
+        assets ride on that. Mutating routes still demand the token in a header
+        that only our own JavaScript sets -- a double submit, so a cross-site
+        POST cannot act even if a cookie were somehow attached to it.
+        """
         host = (self.headers.get("Host") or "").split(":")[0]
         if host not in ("127.0.0.1", "localhost", "[::1]", "::1"):
             return False                   # DNS-rebinding guard
-        supplied = self.headers.get("X-Deck-Token") or ""
-        if not supplied and not mutating:
-            supplied = parse_qs(urlparse(self.path).query).get("token", [""])[0]
-        return hmac.compare_digest(supplied, self.server.token)
+
+        header = self.headers.get("X-Deck-Token") or ""
+        if mutating:
+            return hmac.compare_digest(header, self.server.token)
+
+        for supplied in (header, self._cookie_token(),
+                         parse_qs(urlparse(self.path).query).get("token", [""])[0]):
+            if supplied and hmac.compare_digest(supplied, self.server.token):
+                return True
+        return False
 
     def _send(self, code, body=b"", ctype="application/json", extra=None):
         if isinstance(body, str):
@@ -159,7 +182,9 @@ class Handler(BaseHTTPRequestHandler):
                                    b"deck-editor, including its ?token=.",
                               "text/plain")
         if path == "/":
-            return self._serve_static("index.html")
+            # Hand the browser a session cookie so it can fetch the stylesheet
+            # and script, which it cannot attach a token to.
+            return self._serve_static("index.html", set_cookie=True)
         if path.startswith("/static/"):
             return self._serve_static(os.path.basename(path))
         if path == "/api/state":
@@ -285,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": r.returncode == 0, "code": r.returncode,
                            "output": out[:4000] or "(no output)"})
 
-    def _serve_static(self, name):
+    def _serve_static(self, name, set_cookie=False):
         path = os.path.join(STATIC, os.path.basename(name))
         if not os.path.isfile(path):
             return self._send(404, b"not found", "text/plain")
@@ -296,7 +321,11 @@ class Handler(BaseHTTPRequestHandler):
             # The page needs the token to call the API; it is injected rather
             # than written to disk so it never outlives the process.
             data = data.replace(b"__TOKEN__", self.server.token.encode())
-        return self._send(200, data, ctype)
+        extra = None
+        if set_cookie:
+            extra = {"Set-Cookie": f"{COOKIE}={self.server.token}; Path=/; "
+                                   f"SameSite=Strict; HttpOnly"}
+        return self._send(200, data, ctype, extra)
 
 
 class EditorServer(ThreadingHTTPServer):
