@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Deck key daemon: watch for the deck, run key bindings, keep the icons drawn.
+
+    deck-daemon run       run it (this is what the service does)
+    deck-daemon learn     print key indices as you press them
+    deck-daemon once      draw the icons and exit
+
+The daemon owns the device. Everything else -- the editor, deck-ctl -- asks it
+to act by touching a trigger file, rather than opening the deck behind its back.
+That matters more than it looks: this hardware stops accepting images after a
+limited volume of writes and only a power cycle clears that, so two processes
+drawing at once is a good way to end up staring at a lit but empty panel.
+
+Drawing happens on every attach, which covers both the cases that matter: the
+machine boots with the deck plugged in, and the deck is plugged in later.
+"""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+
+from deck import actions, config, render                    # noqa: E402
+from deck.devices import default_profile                     # noqa: E402
+from deck.drivers import DeckNotFound, open_deck             # noqa: E402
+from deck.paths import CACHE_DIR, CONFIG_FILE, ensure_dirs   # noqa: E402
+
+TRIGGER = os.path.join(CACHE_DIR, "redraw.trigger")
+POLL_SECS = 3
+REDRAW_COOLDOWN = 10      # never redraw more often than this, whatever asks
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+class Daemon:
+    def __init__(self, mode="run"):
+        self.mode = mode
+        self.profile = default_profile()
+        self.keys = {}
+        self.settings = dict(config.SETTINGS)
+        self.cfg_stamp = None
+        self.trigger_stamp = None
+        self.last_draw = 0.0
+        self.reload_config(initial=True)
+
+    # -- config ----------------------------------------------------------
+
+    def _stamp(self, path):
+        try:
+            return os.stat(path).st_mtime_ns
+        except OSError:
+            return None
+
+    def reload_config(self, initial=False):
+        """Pick up edits made by the editor or by hand, without a restart."""
+        stamp = self._stamp(CONFIG_FILE)
+        if stamp == self.cfg_stamp and not initial:
+            return False
+        self.cfg_stamp = stamp
+        self.keys = config.load()
+        self.settings = config.load_settings()
+        self.profile.brightness = self.settings["brightness"]
+        if not initial:
+            log(f"config reloaded: {len(self.keys)} keys bound")
+        elif not self.keys and self.mode == "run":
+            log(f"no key bindings in {CONFIG_FILE}; run deck-editor")
+        return True
+
+    # -- drawing ---------------------------------------------------------
+
+    def draw(self, dev, why=""):
+        if not render.have_magick():
+            log("ImageMagick missing; cannot draw icons")
+            return
+        now = time.monotonic()
+        if now - self.last_draw < REDRAW_COOLDOWN:
+            log(f"redraw suppressed ({why}): within {REDRAW_COOLDOWN}s cooldown")
+            return
+        self.last_draw = now
+        try:
+            tiles = render.render_all(self.keys, self.profile)
+            strategy = self.settings["prime"]
+            log(f"drawing {len(tiles)} icons ({why}, prime={strategy})...")
+            dev.prime(strategy, tiles if strategy == "full" else None)
+            dev.draw(tiles, sweeps=self.settings["sweeps"])
+            if self.settings["reactivate_keys"]:
+                # Back to key-reporting mode, or presses stop arriving.
+                dev.activate_keys()
+            log("icons drawn")
+        except Exception as e:                       # never let a draw kill the daemon
+            log(f"draw failed: {e}")
+
+    def check_trigger(self, dev):
+        """deck-ctl and the editor ask for a redraw by touching a file."""
+        stamp = self._stamp(TRIGGER)
+        if stamp is None or stamp == self.trigger_stamp:
+            return
+        first = self.trigger_stamp is None
+        self.trigger_stamp = stamp
+        if first:
+            return                       # a stale trigger from a previous run
+        self.reload_config()
+        self.draw(dev, why="requested")
+
+    # -- main loop -------------------------------------------------------
+
+    def session(self, dev):
+        log(f"deck active: {dev.profile.name}"
+            + ("  - press keys to see their indices" if self.mode == "learn" else ""))
+        dev.activate_keys()
+
+        if self.mode == "once":
+            self.last_draw = 0
+            self.draw(dev, why="once")
+            return "stop"
+
+        if self.settings["draw_on_attach"] and self.mode == "run":
+            self.last_draw = 0           # an attach always earns a draw
+            self.draw(dev, why="attached")
+
+        while True:
+            for key, state in dev.read_events(timeout_ms=1000):
+                if state != 1:
+                    continue             # act on press, ignore release
+                if self.mode == "learn":
+                    log(f"  key index {key}  (0x{key:02x})")
+                    continue
+                spec = self.keys.get(key)
+                if not spec or not spec.get("cmd"):
+                    log(f"  key {key}: unbound")
+                    continue
+                log(f"  -> {spec.get('label') or key}: {actions.describe(spec['cmd'])}")
+                try:
+                    actions.run(spec["cmd"])
+                except Exception as e:
+                    log(f"  !! failed: {e}")
+            self.reload_config()
+            self.check_trigger(dev)
+
+    def run(self):
+        ensure_dirs()
+        self.trigger_stamp = self._stamp(TRIGGER)
+        missing_logged = False
+        while True:
+            try:
+                dev = open_deck(self.profile)
+            except DeckNotFound as e:
+                if not missing_logged:
+                    log(f"waiting for a deck ({e})" if self.mode != "run"
+                        else "deck not present; waiting...")
+                    missing_logged = True
+                time.sleep(POLL_SECS)
+                continue
+            except OSError as e:
+                log(f"cannot open deck: {e}; waiting...")
+                time.sleep(POLL_SECS)
+                continue
+
+            missing_logged = False
+            try:
+                if self.session(dev) == "stop":
+                    return 0
+            except OSError:
+                log("deck disconnected; will retry")
+            finally:
+                try:
+                    dev.close()
+                except Exception:
+                    pass
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "run"
+    if mode in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    if mode not in ("run", "learn", "once"):
+        print(__doc__, file=sys.stderr)
+        return 2
+    return Daemon(mode).run()
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print()
