@@ -21,7 +21,11 @@ FIELDS = ("label", "cmd", "icon", "color", "caption", "art")
 
 # [deck] settings, with the defaults used when the section is absent.
 SETTINGS = {
-    "prime": "commands",        # commands | light | full  (see drivers/crt.py)
+    # commands | light | jpeg | full  (see drivers/crt.py for what each costs).
+    # "full" is the legacy behaviour and the only value yet observed to render
+    # anything on real hardware; the cheaper ones are unverified. Do not lower
+    # this default until the ladder has been bisected with eyes on the panel.
+    "prime": "full",
     "sweeps": 2,                # times to walk the key set when drawing
     "brightness": 100,
     "draw_on_attach": True,     # redraw whenever the deck is plugged in

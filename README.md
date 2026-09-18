@@ -72,7 +72,7 @@ reading order — the screens are numbered differently and that is handled for y
 
 ```toml
 [deck]
-prime = "commands"        # commands | light | full
+prime = "full"            # commands | light | jpeg | full
 sweeps = 2
 brightness = 100
 draw_on_attach = true
@@ -111,8 +111,10 @@ that a profile did or did not work.
 
 **The deck is lit but blank, or only the last key drew.** It has stopped
 accepting images. Unplug it and plug it back in — the daemon redraws on attach.
-If it happens routinely, you are drawing too often or pushing too much: keep
-`prime = "commands"`.
+If it happens routinely you are drawing too often. Note that priming volume is
+load-bearing in a way that is not fully understood: `prime = "full"` is the only
+setting yet observed to render, and the cheaper ones on the ladder in
+`deck/drivers/crt.py` are still unverified. Reports very welcome.
 
 **Nothing at all, ever.** Check the udev rule took: `ls -l /dev/hidraw*` should
 show the deck's nodes owned by you. Then `deck-ctl probe`.

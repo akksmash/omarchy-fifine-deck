@@ -12,9 +12,10 @@ it a cold deck lights its backlight and shows nothing. How much data that
 priming pushes matters enormously, because the device stops accepting images
 after a limited volume and only a power cycle resets it:
 
-    commands   mode switches only, no image data       (default)
-    light      one tiny solid tile per screen per pass
-    full       the real artwork at every geometry      (legacy; ~1.4MB)
+    commands     21KB   mode switches only          rendered nothing
+    light       111KB   solid tiles, JPEG only
+    jpeg        209KB   real artwork, JPEG only     best candidate
+    full       1732KB   real artwork + BMP passes   renders (the default)
 
 Always preview before pushing. It costs nothing, and the deck tolerates only a
 few draw cycles per power cycle.
@@ -37,7 +38,8 @@ def main() -> int:
     ap.add_argument("--config", help="read keys from this file instead of the live one")
     ap.add_argument("--preview", metavar="DIR", help="write PNGs + a contact sheet, no hardware")
     ap.add_argument("--only", type=int, metavar="KEY", help="with --preview, render one key")
-    ap.add_argument("--prime", choices=PRIME_STRATEGIES, default="commands")
+    ap.add_argument("--prime", choices=PRIME_STRATEGIES, default=None,
+                    help="override the configured priming strategy")
     ap.add_argument("--sweeps", type=int, default=2,
                     help="times to walk the key set while drawing (default 2)")
     ap.add_argument("--brightness", type=int, default=None)
@@ -100,14 +102,15 @@ def main() -> int:
     with dev:
         if args.brightness is not None:
             dev.profile.brightness = args.brightness
-        dev.prime(args.prime, tiles if args.prime == "full" else None)
+        strategy = args.prime or config.load_settings(args.config)["prime"]
+        dev.prime(strategy, tiles)
         if args.clear:
             dev.clear()
             print("cleared")
         else:
             dev.draw(tiles, sweeps=args.sweeps)
             print(f"drawn: {len(tiles)} tiles, {total * args.sweeps / 1024:.1f}KB "
-                  f"on the wire, prime={args.prime}, sweeps={args.sweeps}")
+                  f"on the wire, prime={strategy}, sweeps={args.sweeps}")
         if args.reactivate_keys:
             dev.activate_keys()
     return 0
