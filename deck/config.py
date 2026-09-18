@@ -33,6 +33,12 @@ SETTINGS = {
     # whole set. There is no visible quality loss at 85x85. Raise it only if
     # you enjoy a blank deck.
     "max_tile_bytes": 1200,
+    # Seconds to wait after committing each key's image. Counter-intuitive:
+    # 0.05 renders 10 of 15 screens, while 0.30 renders NOTHING AT ALL. So the
+    # eviction of the first ~5 screens is not simply us outrunning the panel --
+    # going slower makes it strictly worse. Leave this alone without hardware.
+    "key_delay": 0.05,
+    "packet_pace": 0.0015,      # seconds between 512B chunks within one image
     "draw_on_attach": True,     # redraw whenever the deck is plugged in
     "reactivate_keys": True,    # re-enter key mode after drawing
 }

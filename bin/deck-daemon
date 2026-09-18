@@ -85,7 +85,9 @@ class Daemon:
             strategy = self.settings["prime"]
             log(f"drawing {len(tiles)} icons ({why}, prime={strategy})...")
             dev.prime(strategy, tiles if strategy == "full" else None)
-            dev.draw(tiles, sweeps=self.settings["sweeps"])
+            dev.draw(tiles, sweeps=self.settings["sweeps"],
+                     key_delay=self.settings["key_delay"],
+                     packet_pace=self.settings["packet_pace"])
             if self.settings["reactivate_keys"]:
                 # Back to key-reporting mode, or presses stop arriving.
                 dev.activate_keys()

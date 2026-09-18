@@ -169,7 +169,8 @@ class CrtDriver(Driver):
                           (len(data) >> 8) & 0xFF, len(data) & 0xFF, screen), packet)
             self._chunks(data, packet)
 
-    def draw(self, tiles: dict[int, bytes], sweeps: int = 2) -> None:
+    def draw(self, tiles: dict[int, bytes], sweeps: int = 2,
+             key_delay: float = 0.05, packet_pace: float = 0.0015) -> None:
         """Push tiles, keyed by KEY index.
 
         Screen indices must ascend, and each image is committed with its own
@@ -190,7 +191,10 @@ class CrtDriver(Driver):
                     continue
                 self._cmd(crt(*_a("BAT"), 0, 0,
                               (len(data) >> 8) & 0xFF, len(data) & 0xFF, screen))
-                self._chunks(data, p.packet, pace=0.0015)
+                self._chunks(data, p.packet, pace=packet_pace)
                 self._cmd(crt(*_a("STP")))
-                time.sleep(0.05)
+                # The device evicts the EARLIEST images of a batch when pushed
+                # faster than it commits them to the panels: with 50ms here only
+                # the last 9-10 screens survived. Give it time to land each one.
+                time.sleep(key_delay)
         self._cmd(crt(*_a("STP")))
