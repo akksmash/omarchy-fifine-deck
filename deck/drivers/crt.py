@@ -186,10 +186,24 @@ class CrtDriver(Driver):
                           (len(data) >> 8) & 0xFF, len(data) & 0xFF, screen), packet)
             self._chunks(data, packet)
 
-    def draw(self, tiles: dict[int, bytes], sweeps: int = 2,
-             key_delay: float = 0.05, packet_pace: float = 0.0015,
-             batch: int = 0) -> None:
+    def draw(self, tiles: dict[int, bytes], sweeps: int = 1,
+             key_delay: float = 0.30, packet_pace: float = 0.0015,
+             batch: int = 1, clear_first: bool = False) -> None:
         """Push tiles, keyed by KEY index.
+
+        ONE IMAGE PER SESSION (batch=1) is the whole trick, and it is why this
+        works on a device that otherwise renders almost nothing.
+
+        However many images the device is willing to accept in a single display
+        session -- and that number falls as the device is used, from 15 down to
+        1 over an evening -- only the LAST ones survive. Giving every screen its
+        own short session makes that capacity irrelevant: each image is the last
+        one of its own batch. Verified by camera, twice in a row, on a device
+        that moments earlier was accepting exactly one image per session.
+
+        `clear_first` is off by default for the same reason: CLE wipes whatever
+        previous passes managed to land. Every screen gets an image here anyway,
+        so there is nothing to clear.
 
         Screen indices must ascend, and each image is committed with its own
         STP: batching the whole set overflows the device buffer once tiles get
@@ -201,15 +215,11 @@ class CrtDriver(Driver):
         """
         p = self.profile
         screens = list(range(1, p.keys + 1))
-        # Only the tail of a long batch survives -- with 15 images the device
-        # kept the last 5 to 10 and dropped the rest. Splitting the set into
-        # short sessions means every image is near the tail of its own batch.
-        # Only the first group clears; the others would wipe their predecessors.
         groups = ([screens] if batch <= 0 else
                   [screens[i:i + batch] for i in range(0, len(screens), batch)])
 
         for gi, group in enumerate(groups):
-            self._begin(MODE_DISPLAY, p.packet, clear=(gi == 0))
+            self._begin(MODE_DISPLAY, p.packet, clear=(clear_first and gi == 0))
             self._draw_group(group, tiles, sweeps, key_delay, packet_pace)
             self._cmd(crt(*_a("STP")))
 

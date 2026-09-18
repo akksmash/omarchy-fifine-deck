@@ -45,10 +45,11 @@ SETTINGS = {
     # Seconds between keepalives, or 0 to disable. The panel blanks itself if
     # left alone after a draw, so something harmless has to be sent periodically.
     "keepalive_secs": 15,
-    # Draw the key set in groups of this many screens, each its own short
-    # display session, because the device keeps only the tail of a long batch.
-    # 0 draws all of them in one session (the original behaviour).
-    "batch_size": 5,
+    # Screens per display session. 1 is the setting that makes this hardware
+    # work: whatever number of images the device will accept per session, only
+    # the last ones survive, so giving each screen its own session makes that
+    # capacity irrelevant. 0 draws everything in one session (original, worse).
+    "batch_size": 1,
     # Seconds to wait after the deck appears before drawing. It enumerates in
     # about a second, but that is not the same as being ready to render, and a
     # draw issued immediately has been seen to produce a blank panel.

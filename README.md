@@ -143,9 +143,13 @@ to be right, and each one alone produces an identically blank panel:
    factory demo images it boots with.
 3. **Tile size.** `max_tile_bytes = 1200`. At ~2300B exactly one key rendered;
    at 1500B, fourteen of fifteen. There is no visible quality loss at 85x85.
-4. **Batch length.** `batch_size = 5`. Pushed as one 15-image batch, only the
-   tail survives — the bottom row is sent first, so it is the row that loses.
-   Short sessions keep every image near the tail of its own batch.
+4. **One image per display session.** `batch_size = 1`. This is the single most
+   important setting. However many images the device will accept in one session
+   — and that number falls with use, from 15 down to 1 over an evening — only
+   the **last** ones survive. Give every screen its own session and that
+   capacity stops mattering, because each image is the last of its own batch.
+   Do not clear between sessions (`clear_first` is off): `CLE` wipes whatever
+   the previous sessions landed.
 
 Two things that look like fixes and are not, both measured: raising `key_delay`
 to 0.30 renders **nothing**, and `sweeps = 1` renders **nothing**.

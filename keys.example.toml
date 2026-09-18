@@ -141,7 +141,7 @@ prime = "full"          # the BMP passes are what engage MOD 2
 sweeps = 1              # ONE sweep: half the data, and the 2nd sweep leaves
                         # screens it cannot finish blank
 key_delay = 0.30        # slow single sweep rendered 15/15 as a first draw
-batch_size = 0
+batch_size = 1   # ONE image per session - this is the fix
 max_tile_bytes = 1200   # at 2300B only one key rendered
 packet_pace = 0.0015
 keepalive_secs = 0
