@@ -33,13 +33,23 @@ MODE_DISPLAY = 2
 # state. The device tolerates a limited total volume before it stops rendering
 # until power-cycled, so this matters a great deal:
 #
-#   commands  mode switches only, no image data at all.      ~0 KB
-#   light     one tiny solid tile per screen per pass.       ~80 KB
-#   full      the real artwork, at every priming geometry.   ~1.4 MB  (legacy)
+#   commands  mode switches only, no image data at all.       ~42 KB
+#   light     flat solid tiles, JPEG geometries only.          ~50 KB
+#   jpeg      the real artwork, JPEG geometries only.         ~209 KB
+#   full      the real artwork at every geometry, BMP too.   ~1732 KB  (legacy)
 #
-# "full" is what the original script did -- by accident, since it had a helper
-# to avoid exactly that and never called it. It is kept only for A/B testing.
-PRIME_STRATEGIES = ("commands", "light", "full")
+# Note the BMP passes are the entire difference in scale: BMP is uncompressed,
+# so a "tiny" solid BMP tile is still 21-27KB and 30 of them is 1.6MB. Any
+# strategy that touches BMP costs roughly what "full" costs, whatever it draws.
+#
+# Observed on real hardware: "full" renders (it is what the original script did,
+# by accident -- it had a helper to avoid exactly that and never called it),
+# while "commands" and "light" render nothing at all. So priming appears to need
+# real image volume, not merely the mode switches, and the two BMP passes are
+# ~1.45MB of that 1.5MB because BMP is uncompressed. "jpeg" is the middle
+# ground: enough real data to prime, little enough to leave the device's
+# budget for the draw that follows.
+PRIME_STRATEGIES = ("commands", "light", "jpeg", "full")
 
 
 def crt(*payload: int) -> bytes:
@@ -134,8 +144,10 @@ class CrtDriver(Driver):
 
         p = self.profile
         geometries = ((p.tile, p.packet), (p.tile + 10, p.packet * 2))
+        # Only "full" pays for the BMP geometries; see the note above.
+        formats = (p.image, "BMP") if strategy == "full" else (p.image,)
         for mode in (0, 1):
-            for fmt in (p.image, "BMP"):
+            for fmt in formats:
                 for size, packet in geometries:
                     self._begin(mode, packet)
                     if strategy != "commands":
@@ -147,7 +159,7 @@ class CrtDriver(Driver):
         from .. import render
         p = self.profile
         for screen in range(1, p.keys + 1):
-            if strategy == "full" and tiles:
+            if strategy in ("full", "jpeg") and tiles:
                 # Legacy behaviour: re-encode the real artwork at every priming
                 # geometry. Enormous, and the reason the device gives up early.
                 data = render.reencode(tiles[p.key_for_screen(screen)], size, fmt)
