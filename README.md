@@ -109,11 +109,28 @@ that a profile did or did not work.
 
 ## Troubleshooting
 
-**Draw once per plug-in.** The device degrades with every draw until it is
-power-cycled: a cold deck renders all 15 keys, and each subsequent redraw on a
-warm one renders progressively fewer. That is the hardware, not the software.
-The daemon is built around this — it draws on attach and rate-limits redraws —
-so the reliable recipe is simply: plug it in, let it draw, leave it alone.
+**Draw once per power cycle, and measure nothing back-to-back.** This is the
+single most important thing to know about this hardware, and it invalidates the
+obvious way to test it.
+
+The device degrades monotonically with every draw. Measured on identical
+settings, one after another:
+
+| Draw | Keys rendered |
+|---|---|
+| 1st after a power cycle | 15 |
+| 2nd | 4 |
+| 3rd | 0 |
+
+A USB bus reset does **not** clear it — only physically unplugging does. And the
+degradation also accumulates across a long session: after ~20 draws in an hour,
+even a fresh power cycle rendered only 3 of 15.
+
+So any A/B comparison run back-to-back is measuring **draw number**, not the
+setting you changed. Every contradictory result in this project's history came
+from exactly that mistake: a theory that explained one run and died on the next.
+If you are tuning this, budget one draw per power cycle, and rest the device
+between sessions.
 
 **The deck is lit but blank, or only some keys drew.** Four separate things have
 to be right, and each one alone produces an identically blank panel:

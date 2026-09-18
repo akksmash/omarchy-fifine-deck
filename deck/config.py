@@ -26,18 +26,21 @@ SETTINGS = {
     # anything on real hardware; the cheaper ones are unverified. Do not lower
     # this default until the ladder has been bisected with eyes on the panel.
     "prime": "full",
-    "sweeps": 2,                # times to walk the key set when drawing
+    # ONE sweep. Two was a workaround from the flood era; it doubles the data
+    # and, when the device runs out of capacity partway through the second pass,
+    # leaves the screens it could not finish blank.
+    "sweeps": 1,
     "brightness": 100,
     # Bytes per tile, and the single most important setting here. At ~2300B
     # exactly ONE key rendered; at 1500B, fourteen of fifteen; at 1200B the
     # whole set. There is no visible quality loss at 85x85. Raise it only if
     # you enjoy a blank deck.
     "max_tile_bytes": 1200,
-    # Seconds to wait after committing each key's image. Counter-intuitive:
-    # 0.05 renders 10 of 15 screens, while 0.30 renders NOTHING AT ALL. So the
-    # eviction of the first ~5 screens is not simply us outrunning the panel --
-    # going slower makes it strictly worse. Leave this alone without hardware.
-    "key_delay": 0.05,
+    # Seconds after committing each key's image. 0.30 with a single sweep
+    # rendered all 15 as a first-draw-after-power-cycle. (An earlier note here
+    # claimed 0.30 renders nothing -- that measurement was taken on an already
+    # degraded device, which is the trap described under "sweeps".)
+    "key_delay": 0.30,
     "packet_pace": 0.0015,      # seconds between 512B chunks within one image
     # Seconds between keepalives, or 0 to disable. The panel blanks itself if
     # left alone after a draw, so something harmless has to be sent periodically.
@@ -46,6 +49,10 @@ SETTINGS = {
     # display session, because the device keeps only the tail of a long batch.
     # 0 draws all of them in one session (the original behaviour).
     "batch_size": 5,
+    # Seconds to wait after the deck appears before drawing. It enumerates in
+    # about a second, but that is not the same as being ready to render, and a
+    # draw issued immediately has been seen to produce a blank panel.
+    "attach_settle_secs": 5.0,
     "draw_on_attach": True,     # redraw whenever the deck is plugged in
     "reactivate_keys": True,    # re-enter key mode after drawing
 }

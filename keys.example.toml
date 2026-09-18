@@ -131,22 +131,20 @@ caption = "Menu"
 art = "the Arch Linux logo"
 
 [deck]
-# Verified working: power-cycle the deck and let the daemon draw once -> all 15
-# keys. Every value here matters; each wrong one alone gives a blank panel.
+# THE RULE: one draw per physical power cycle. The device degrades monotonically
+# with every draw -- 15 keys, then 4, then 0, on identical settings -- and a USB
+# bus reset does NOT clear it. Only unplugging does. Every A/B test run back to
+# back is therefore measuring draw-number, not the setting.
 #
-# The device degrades with every draw until it is power-cycled, so the winning
-# move is to draw ONCE per plug-in. That is what draw_on_attach does. Repeated
-# redraws on a warm device render progressively fewer keys - that is the device,
-# not the code.
+# So: draw once on attach, and do not redraw unless you mean it.
 prime = "full"          # the BMP passes are what engage MOD 2
-sweeps = 2              # sweeps = 1 renders nothing
-batch_size = 5          # one 15-image batch: only the tail survives
-max_tile_bytes = 1200   # at 2300B only ONE key rendered
-key_delay = 0.05        # 0.30 renders nothing - do not "slow it down"
+sweeps = 1              # ONE sweep: half the data, and the 2nd sweep leaves
+                        # screens it cannot finish blank
+key_delay = 0.30        # slow single sweep rendered 15/15 as a first draw
+batch_size = 0
+max_tile_bytes = 1200   # at 2300B only one key rendered
 packet_pace = 0.0015
-keepalive_secs = 15
+keepalive_secs = 0
+attach_settle_secs = 5.0
 draw_on_attach = true
-reactivate_keys = true
-
-# Transport must be raw hidraw; hidapi renders nothing on this device. That is
-# the Linux default in deck/transport.py, so no override is needed here.
+reactivate_keys = false

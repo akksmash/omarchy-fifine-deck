@@ -121,6 +121,10 @@ class Daemon:
             return "stop"
 
         if self.settings["draw_on_attach"] and self.mode == "run":
+            settle = self.settings["attach_settle_secs"]
+            if settle:
+                log(f"settling {settle}s before drawing...")
+                time.sleep(settle)
             self.last_draw = 0           # an attach always earns a draw
             self.draw(dev, why="attached")
 
