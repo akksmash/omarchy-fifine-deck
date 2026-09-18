@@ -109,7 +109,13 @@ that a profile did or did not work.
 
 ## Troubleshooting
 
-**The deck is lit but blank, or only one key drew.** Three separate things have
+**Draw once per plug-in.** The device degrades with every draw until it is
+power-cycled: a cold deck renders all 15 keys, and each subsequent redraw on a
+warm one renders progressively fewer. That is the hardware, not the software.
+The daemon is built around this — it draws on attach and rate-limits redraws —
+so the reliable recipe is simply: plug it in, let it draw, leave it alone.
+
+**The deck is lit but blank, or only some keys drew.** Four separate things have
 to be right, and each one alone produces an identically blank panel:
 
 1. **Transport.** On Linux this must be raw `hidraw`. Through `hidapi` this
@@ -120,6 +126,12 @@ to be right, and each one alone produces an identically blank panel:
    factory demo images it boots with.
 3. **Tile size.** `max_tile_bytes = 1200`. At ~2300B exactly one key rendered;
    at 1500B, fourteen of fifteen. There is no visible quality loss at 85x85.
+4. **Batch length.** `batch_size = 5`. Pushed as one 15-image batch, only the
+   tail survives — the bottom row is sent first, so it is the row that loses.
+   Short sessions keep every image near the tail of its own batch.
+
+Two things that look like fixes and are not, both measured: raising `key_delay`
+to 0.30 renders **nothing**, and `sweeps = 1` renders **nothing**.
 
 **It shows unfamiliar icons I never configured.** Those are the manufacturer's
 demo images, which the deck displays at power-on. A `full`-priming draw takes
