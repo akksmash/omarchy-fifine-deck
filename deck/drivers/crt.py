@@ -115,17 +115,34 @@ class CrtDriver(Driver):
 
     # -- output -----------------------------------------------------------
 
+    def keepalive(self) -> None:
+        """Re-assert brightness, to stop the panel blanking itself when idle.
+
+        Observed: a completed draw renders all 15 keys, then the panel goes dark
+        on its own with the host sending nothing at all. So the device wants to
+        hear from us. LIG is used for this because it is already part of the
+        normal draw sequence and demonstrably does not clear the screens --
+        unlike CONNECT, which does, and must never be used as a keepalive.
+        """
+        self.set_brightness(self.profile.brightness)
+
     def set_brightness(self, pct: int) -> None:
         self._cmd(crt(*_a("LIG"), 0, 0, max(0, min(100, int(pct)))))
 
-    def _begin(self, mode: int, packet: int) -> None:
-        """Open a session in `mode` and blank the screens."""
+    def _begin(self, mode: int, packet: int, clear: bool = True) -> None:
+        """Open a session in `mode`, optionally blanking the screens.
+
+        `clear=False` is for continuing a draw that is split across several
+        sessions: only the first group may clear, or each group would wipe the
+        groups before it.
+        """
         self._cmd(crt(*_a("DIS")), packet);                    time.sleep(0.1)
         self._cmd(crt(*_a("LIG"), 0, 0, 0, 0), packet);        time.sleep(0.1)
         self._cmd(crt(*_a("MOD"), 0, 0, 0x30 + mode), packet); time.sleep(0.2)
         self._cmd(crt(*_a("LIG"), 0, 0, self.profile.brightness), packet)
         time.sleep(0.2)
-        self._cmd(crt(*_a("CLE"), 0, 0, 0, 0xFF), packet)
+        if clear:
+            self._cmd(crt(*_a("CLE"), 0, 0, 0, 0xFF), packet)
         self._cmd(crt(*_a("STP")), packet)
         time.sleep(0.25)
 
@@ -170,7 +187,8 @@ class CrtDriver(Driver):
             self._chunks(data, packet)
 
     def draw(self, tiles: dict[int, bytes], sweeps: int = 2,
-             key_delay: float = 0.05, packet_pace: float = 0.0015) -> None:
+             key_delay: float = 0.05, packet_pace: float = 0.0015,
+             batch: int = 0) -> None:
         """Push tiles, keyed by KEY index.
 
         Screen indices must ascend, and each image is committed with its own
@@ -182,9 +200,23 @@ class CrtDriver(Driver):
         workaround for a cause still not understood, not a fix.
         """
         p = self.profile
-        self._begin(MODE_DISPLAY, p.packet)
+        screens = list(range(1, p.keys + 1))
+        # Only the tail of a long batch survives -- with 15 images the device
+        # kept the last 5 to 10 and dropped the rest. Splitting the set into
+        # short sessions means every image is near the tail of its own batch.
+        # Only the first group clears; the others would wipe their predecessors.
+        groups = ([screens] if batch <= 0 else
+                  [screens[i:i + batch] for i in range(0, len(screens), batch)])
+
+        for gi, group in enumerate(groups):
+            self._begin(MODE_DISPLAY, p.packet, clear=(gi == 0))
+            self._draw_group(group, tiles, sweeps, key_delay, packet_pace)
+            self._cmd(crt(*_a("STP")))
+
+    def _draw_group(self, group, tiles, sweeps, key_delay, packet_pace) -> None:
+        p = self.profile
         for _ in range(sweeps):
-            for screen in range(1, p.keys + 1):
+            for screen in group:
                 key = p.key_for_screen(screen)
                 data = tiles.get(key)
                 if not data:
@@ -197,4 +229,3 @@ class CrtDriver(Driver):
                 # faster than it commits them to the panels: with 50ms here only
                 # the last 9-10 screens survived. Give it time to land each one.
                 time.sleep(key_delay)
-        self._cmd(crt(*_a("STP")))

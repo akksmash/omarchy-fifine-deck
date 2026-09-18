@@ -39,6 +39,13 @@ SETTINGS = {
     # going slower makes it strictly worse. Leave this alone without hardware.
     "key_delay": 0.05,
     "packet_pace": 0.0015,      # seconds between 512B chunks within one image
+    # Seconds between keepalives, or 0 to disable. The panel blanks itself if
+    # left alone after a draw, so something harmless has to be sent periodically.
+    "keepalive_secs": 15,
+    # Draw the key set in groups of this many screens, each its own short
+    # display session, because the device keeps only the tail of a long batch.
+    # 0 draws all of them in one session (the original behaviour).
+    "batch_size": 5,
     "draw_on_attach": True,     # redraw whenever the deck is plugged in
     "reactivate_keys": True,    # re-enter key mode after drawing
 }

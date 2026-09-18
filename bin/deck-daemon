@@ -87,7 +87,8 @@ class Daemon:
             dev.prime(strategy, tiles if strategy == "full" else None)
             dev.draw(tiles, sweeps=self.settings["sweeps"],
                      key_delay=self.settings["key_delay"],
-                     packet_pace=self.settings["packet_pace"])
+                     packet_pace=self.settings["packet_pace"],
+                     batch=self.settings["batch_size"])
             if self.settings["reactivate_keys"]:
                 # Back to key-reporting mode, or presses stop arriving.
                 dev.activate_keys()
@@ -123,6 +124,7 @@ class Daemon:
             self.last_draw = 0           # an attach always earns a draw
             self.draw(dev, why="attached")
 
+        last_ka = time.monotonic()
         while True:
             for key, state in dev.read_events(timeout_ms=1000):
                 if state != 1:
@@ -141,6 +143,16 @@ class Daemon:
                     log(f"  !! failed: {e}")
             self.reload_config()
             self.check_trigger(dev)
+
+            ka = self.settings["keepalive_secs"]
+            if ka and time.monotonic() - last_ka >= ka:
+                last_ka = time.monotonic()
+                try:
+                    dev.keepalive()
+                except OSError:
+                    raise                      # a dead device belongs in the outer retry
+                except Exception as e:
+                    log(f"keepalive failed: {e}")
 
     def run(self):
         ensure_dirs()
