@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="deck-token" content="__TOKEN__">
+<title>Deck Editor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot" id="dot"></span>
+    <strong id="device">Deck Editor</strong>
+    <span class="sub" id="substatus"></span>
+  </div>
+  <div class="actions">
+    <button id="btn-revert" class="ghost" title="Discard unsaved changes">Revert</button>
+    <button id="btn-redraw" class="ghost" title="Redraw the deck's screens now">Redraw deck</button>
+    <button id="btn-save" class="primary" disabled>Save</button>
+  </div>
+</header>
+
+<main>
+  <section class="left">
+    <div id="grid" class="grid" aria-label="Deck keys"></div>
+    <p class="hint">Drag a key onto another to swap them. Click to edit.</p>
+    <div class="settings">
+      <label>Brightness
+        <input type="range" id="set-brightness" min="10" max="100" step="5">
+        <output id="out-brightness"></output>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="set-draw"> Redraw automatically when the deck is plugged in
+      </label>
+    </div>
+  </section>
+
+  <section class="right">
+    <div id="empty" class="empty">Select a key to edit it.</div>
+
+    <form id="form" hidden autocomplete="off">
+      <h2>Key <span id="f-index"></span></h2>
+
+      <label>Label <small>what this key is, for you</small>
+        <input name="label" id="f-label" maxlength="60">
+      </label>
+
+      <label>Caption <small>the text drawn on the key — keep it short</small>
+        <input name="caption" id="f-caption" maxlength="24">
+      </label>
+
+      <label>Command <small>runs in your shell when the key is pressed</small>
+        <textarea name="cmd" id="f-cmd" rows="3" spellcheck="false"></textarea>
+      </label>
+
+      <div class="row">
+        <label class="grow">Colour <small>accent, when there is no artwork</small>
+          <span class="colorwrap">
+            <input type="color" id="f-color-picker">
+            <input name="color" id="f-color" maxlength="9" spellcheck="false" placeholder="#8ab4f8">
+          </span>
+        </label>
+        <label class="narrow">Glyph <small>icon font</small>
+          <input name="icon" id="f-icon" maxlength="4" spellcheck="false">
+        </label>
+      </div>
+
+      <label>Artwork prompt <small>used by deck-icon-gen to generate the key art</small>
+        <input name="art" id="f-art" maxlength="200">
+      </label>
+
+      <div class="row buttons">
+        <button type="button" id="btn-test">Test command</button>
+        <button type="button" id="btn-clear" class="ghost danger">Clear key</button>
+      </div>
+
+      <pre id="test-out" hidden></pre>
+    </form>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

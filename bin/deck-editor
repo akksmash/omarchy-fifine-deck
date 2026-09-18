@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Drag-and-drop editor for the deck's keys.
+
+    deck-editor                 start it and open a browser
+    deck-editor --no-browser    just print the URL
+    deck-editor --port 9000     use a specific port
+
+Serves on loopback only, behind a token that is generated per run and never
+written to disk. Closing the browser does not stop it; Ctrl-C does.
+"""
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import webbrowser
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+
+from deck import render                      # noqa: E402
+from deck.editor.server import serve         # noqa: E402
+
+
+def open_in_browser(url: str) -> None:
+    """Prefer a proper app window where the desktop offers one."""
+    for launcher in ("omarchy-launch-webapp",):
+        if shutil.which(launcher):
+            try:
+                subprocess.Popen([launcher, url], start_new_session=True,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                return
+            except OSError:
+                pass
+    webbrowser.open(url)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--port", type=int, default=8777,
+                    help="0 picks a free port (default 8777)")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help=argparse.SUPPRESS)   # deliberately not advertised
+    ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true", help="log requests")
+    args = ap.parse_args()
+
+    if args.host != "127.0.0.1":
+        print("refusing to bind anything but loopback: this server runs shell "
+              "commands.", file=sys.stderr)
+        return 2
+
+    if not render.have_magick():
+        print("warning: ImageMagick not found, so key previews will not render.",
+              file=sys.stderr)
+
+    try:
+        srv, url = serve(args.host, args.port, args.verbose)
+    except OSError as e:
+        print(f"could not start on port {args.port}: {e}\n"
+              f"Try: deck-editor --port 0", file=sys.stderr)
+        return 1
+
+    # Flushed explicitly: when this is launched from a service or a pipe,
+    # stdout is block-buffered and the URL -- the one thing the user needs --
+    # would sit in the buffer until exit.
+    print(f"deck editor: {url}", flush=True)
+    print("Ctrl-C to stop.", flush=True)
+    if not args.no_browser:
+        threading.Timer(0.3, open_in_browser, args=(url,)).start()
+
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print()
+    finally:
+        srv.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

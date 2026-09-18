@@ -1,204 +1,123 @@
 #!/usr/bin/env python3
-"""Draw labelled icons on the Fifine AmpliGame D6 (USB 3142:0060).
+"""Render key faces and push them to the deck.
 
-Working configuration, established by photographing all 16 mode/format/size
-combinations:
+    deck-icons                      draw from the live config
+    deck-icons --preview DIR        render a contact sheet, touch no hardware
+    deck-icons --prime commands     choose how hard to prime (see below)
+    deck-icons --clear              blank every key
+    deck-icons --dry-run            render and report sizes, send nothing
 
-    MOD 2  |  JPEG  |  85x85  |  512-byte packets
+Priming walks the device through its lower modes so MOD 2 will render; without
+it a cold deck lights its backlight and shows nothing. How much data that
+priming pushes matters enormously, because the device stops accepting images
+after a limited volume and only a power cycle resets it:
 
-MOD 2 is the display mode. MOD 1 is the key-input mode and does NOT render;
-MOD 0 renders nothing at all. Format was never the problem - JPEG works fine
-once the mode is right. (MOD 3 + BMP 85x85 also renders, if ever needed.)
+    commands     21KB   mode switches only          rendered nothing
+    light       111KB   solid tiles, JPEG only
+    jpeg        209KB   real artwork, JPEG only     best candidate
+    full       1732KB   real artwork + BMP passes   renders (the default)
 
-Sequence: DIS, LIG init, MOD 2, brightness, CLE_ALL + STP, per-key BAT + data,
-STP. Tiles are pre-rotated 180 because the panel is mounted inverted, which is
-also why wire index 1 is the BOTTOM-LEFT key.
-
-    deck-icons            draw icons from ~/.config/fifine-deck/keys.toml
-    deck-icons --clear    blank all keys
+Always preview before pushing. It costs nothing, and the deck tolerates only a
+few draw cycles per power cycle.
 """
-import glob, os, subprocess, sys, tempfile, time, tomllib
+import argparse
+import os
+import sys
 
-CONFIG = os.path.expanduser("~/.config/fifine-deck/keys.toml")
-MODE, FMT, SIZE, PKT = 2, "JPEG", 85, 512
-USE_ART = "--no-art" not in sys.argv
-MAX_TILE_BYTES = 2300
-ART_DIR = os.path.expanduser("~/.local/share/fifine-deck/art")
-NERD = "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf"
-SANS_BOLD = "/usr/share/fonts/liberation/LiberationSans-Bold.ttf"
-PALETTE = ["#e0245e","#1db954","#e06c2b","#2f6fd0","#8b46c9","#0f9aa8","#d1345b","#5566a8",
-           "#c8871f","#12a594","#d84a72","#3f7fb8","#a4557f","#2f9e5f","#c26a2c"]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 
-def crt(*p): return bytes([0x00,0x43,0x52,0x54,0x00,0x00]) + bytes(p)
-A_ = lambda s: tuple(s.encode())
+from deck import config, render                      # noqa: E402
+from deck.devices import default_profile             # noqa: E402
+from deck.drivers import DeckNotFound, open_deck     # noqa: E402
+from deck.drivers.crt import PRIME_STRATEGIES        # noqa: E402
 
-def node():
-    for d in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
-        rp = os.path.realpath(d)
-        if "3142:0060" in rp and ":1.0/" in rp:
-            return "/dev/" + os.path.basename(d)
-    sys.exit("fifine d6 not found")
 
-def screen_index(key):
-    """Map a key index (as reported when pressed) to its screen index.
+def main() -> int:
+    ap = argparse.ArgumentParser(add_help=True, description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", help="read keys from this file instead of the live one")
+    ap.add_argument("--preview", metavar="DIR", help="write PNGs + a contact sheet, no hardware")
+    ap.add_argument("--only", type=int, metavar="KEY", help="with --preview, render one key")
+    ap.add_argument("--prime", choices=PRIME_STRATEGIES, default=None,
+                    help="override the configured priming strategy")
+    ap.add_argument("--sweeps", type=int, default=2,
+                    help="times to walk the key set while drawing (default 2)")
+    ap.add_argument("--brightness", type=int, default=None)
+    ap.add_argument("--clear", action="store_true")
+    ap.add_argument("--no-art", action="store_true", help="ignore generated artwork")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--reactivate-keys", action="store_true",
+                    help="send MOD 1 after drawing, so the key daemon keeps "
+                         "reporting. UNVERIFIED: it is not known whether MOD 1 "
+                         "blanks the screens on this hardware.")
+    args = ap.parse_args()
 
-    The two are NOT the same on this hardware: key events are numbered in
-    reading order (top-left = 1), while the display is row-flipped
-    (bottom-left = 1). Without this, every icon sits one row away from the
-    key that triggers it.
-    """
-    if key <= 5:   return key + 10      # top row
-    if key <= 10:  return key           # middle row is unchanged
-    return key - 10                     # bottom row
+    if not render.have_magick():
+        print("ImageMagick not found; cannot render tiles.", file=sys.stderr)
+        return 2
 
-def key_for_screen(scr):
-    """Inverse of screen_index: which key index lives on this screen."""
-    if scr <= 5:   return scr + 10
-    if scr <= 10:  return scr
-    return scr - 10
+    profile = default_profile()
+    keys = {} if args.clear else config.load(args.config)
+    if not keys and not args.clear:
+        print("No key bindings configured. Run deck-editor, or edit keys.toml.",
+              file=sys.stderr)
 
-def wrap(label):
-    words, lines, cur = label.split(), [], ""
-    for word in words:
-        if len(cur) + len(word) + 1 <= 9:
-            cur = (cur + " " + word).strip()
+    use_art = not args.no_art
+
+    # ---- preview: never touches the device -------------------------------
+    if args.preview:
+        os.makedirs(args.preview, exist_ok=True)
+        wanted = [args.only] if args.only else list(profile.key_range)
+        shots = []
+        for k in wanted:
+            shots.append(render.preview_png(k, keys.get(k, {}), profile,
+                                            os.path.join(args.preview, f"pv{k}.png"),
+                                            use_art=use_art))
+        if len(shots) > 1:
+            sheet = os.path.join(args.preview, "preview.png")
+            render._run(["montage", *shots, "-tile", f"{profile.cols}x{profile.rows}",
+                         "-geometry", "+5+5", "-background", "#2a2a2a", sheet])
+            print(sheet)
         else:
-            lines.append(cur); cur = word
-        if len(lines) == 2: break
-    if cur: lines.append(cur)
-    return "\n".join(lines[:3])
+            print(shots[0])
+        return 0
 
-def _shade(hexcol, factor):
-    """Darken/lighten #rrggbb by a factor, for the background gradient."""
-    h = hexcol.lstrip("#")
-    if len(h) == 3: h = "".join(c*2 for c in h)
-    r, g, bl = (int(h[i:i+2], 16) for i in (0, 2, 4))
-    f = lambda v: max(0, min(255, int(v * factor)))
-    return f"#{f(r):02x}{f(g):02x}{f(bl):02x}"
+    # ---- render ----------------------------------------------------------
+    tiles = render.render_all(keys, profile, use_art=use_art)
+    total = sum(len(v) for v in tiles.values())
+    if args.dry_run:
+        for k in profile.key_range:
+            print(f"  {k:>2}  {len(tiles[k]):>5}B  {keys.get(k, {}).get('label', '')}")
+        print(f"total {total / 1024:.1f}KB over {len(tiles)} tiles "
+              f"(x{args.sweeps} sweeps = {total * args.sweeps / 1024:.1f}KB on the wire)")
+        return 0
 
-def tile(idx, spec, size=SIZE, fmt=FMT):
-    """Key face: generated artwork if available, else an accent gradient + glyph.
+    # ---- push ------------------------------------------------------------
+    try:
+        dev = open_deck(profile)
+    except DeckNotFound as e:
+        print(e, file=sys.stderr)
+        return 1
 
-    Either way a dark scrim and heavy white type go at the bottom - the panel is
-    only 85x85, so contrast and type size are the whole game.
-    """
-    ext = "bmp" if fmt == "BMP" else "jpg"
-    p = os.path.join(tempfile.gettempdir(), f"dk_{idx}_{size}_{fmt}.{ext}")
-    if os.path.exists(p): return open(p, "rb").read()
+    with dev:
+        if args.brightness is not None:
+            dev.profile.brightness = args.brightness
+        strategy = args.prime or config.load_settings(args.config)["prime"]
+        dev.prime(strategy, tiles)
+        if args.clear:
+            dev.clear()
+            print("cleared")
+        else:
+            dev.draw(tiles, sweeps=args.sweeps)
+            print(f"drawn: {len(tiles)} tiles, {total * args.sweeps / 1024:.1f}KB "
+                  f"on the wire, prime={strategy}, sweeps={args.sweeps}")
+        if args.reactivate_keys:
+            dev.activate_keys()
+    return 0
 
-    accent  = spec.get("color", "#8ab4f8")
-    glyph   = spec.get("icon", "")
-    caption = spec.get("caption", spec.get("label", ""))
-    if len(caption) > 8 and " " in caption:
-        head, _, tail = caption.partition(" ")
-        caption = f"{head}\n{tail}"
-    lines = caption.count("\n") + 1
-    cpt = int(size * (0.165 if lines > 1 else 0.20))
-    scrim_y = int(size * (0.60 if lines > 1 else 0.66))
 
-    art = os.path.join(ART_DIR, f"{idx}.png")
-    if USE_ART and os.path.exists(art):
-        args = ["magick", art, "-resize", f"{size}x{size}!"]
-    else:
-        top, bottom = _shade(accent, 1.18), _shade(accent, 0.52)
-        gpt = int(size * (0.36 if lines > 1 else 0.44))
-        args = ["magick", "-size", f"{size}x{size}", f"gradient:{top}-{bottom}"]
-        if glyph:
-            args += ["-font", NERD, "-pointsize", str(gpt), "-fill", "white",
-                     "-gravity", "north", "-annotate", f"+0+{int(size*0.045)}", glyph]
-
-    args += ["-fill", "rgba(0,0,0,0.58)", "-draw",
-             f"rectangle 0,{scrim_y} {size},{size}"]
-    if caption:
-        args += ["-font", SANS_BOLD, "-pointsize", str(cpt),
-                 "-interline-spacing", "-3", "-gravity", "south",
-                 "-fill", "white", "-annotate", f"+0+{int(size*0.035)}", caption]
-    # Tiles above roughly 2.5KB get dropped by the device (only the tail of the
-    # batch survives). The glyph set that rendered reliably was ~2.3KB, so step
-    # quality down until generated art fits the same envelope.
-    base = args + ["-rotate", "180", "-alpha", "off"]
-    for q in (92, 82, 72, 62, 54, 46):
-        subprocess.run(base + ["-quality", str(q), f"{fmt}:{p}"], check=True)
-        if fmt != "JPEG" or os.path.getsize(p) <= MAX_TILE_BYTES:
-            break
-    return open(p, "rb").read()
-
-labels = {}
-if "--clear" not in sys.argv:
-    with open(CONFIG, "rb") as f:
-        keys = tomllib.load(f)["keys"]
-    labels = {i: keys.get(str(i), {}) for i in range(1, 16)}
-else:
-    labels = {i: {} for i in range(1, 16)}
-
-if "--preview" in sys.argv:
-    outdir = sys.argv[sys.argv.index("--preview") + 1]
-    shots = []
-    for i in range(1, 16):
-        tile(i, labels[i])
-        f = f"{outdir}/pv{i}.png"
-        subprocess.run(["magick", f"{tempfile.gettempdir()}/dk_{i}_{SIZE}_{FMT}.jpg",
-                        "-rotate", "180", "-resize", "150x", f], check=True)
-        shots.append(f)
-    subprocess.run(["magick", "montage", *shots, "-tile", "5x3", "-geometry", "+5+5",
-                    "-background", "#2a2a2a", f"{outdir}/preview.png"], check=True)
-    print(f"{outdir}/preview.png")
-    raise SystemExit(0)
-
-fd = os.open(node(), os.O_RDWR | os.O_NONBLOCK)
-
-def pass_(mode, fmt, size, pkt, draw, pace=False, simple=False):
-    """One upload pass. MOD 2 alone renders nothing on a cold device - the
-    modes below it must run first - so the earlier passes are priming."""
-    w = lambda p: os.write(fd, p + b"\x00"*(1 + pkt - len(p)))
-    w(crt(*A_("DIS")));                time.sleep(0.1)
-    w(crt(*A_("LIG"), 0,0,0,0));       time.sleep(0.1)
-    w(crt(*A_("MOD"), 0,0,0x30+mode)); time.sleep(0.2)
-    w(crt(*A_("LIG"), 0,0,100));       time.sleep(0.2)
-    w(crt(*A_("CLE"), 0,0,0,0xFF)); w(crt(*A_("STP"))); time.sleep(0.25)
-    # Walk SCREEN indices ascending, and do it twice on the drawing pass. The
-    # device evicts the earliest tiles of a batch, so a single sweep leaves the
-    # first few screens blank; the second sweep fills them in.
-    sweeps = 2 if pace else 1
-    for _ in range(sweeps):
-      for scr in range(1, 16):
-        key = key_for_screen(scr)
-        d = tile(key, labels[key], size, fmt)
-        w(crt(*A_("BAT"), 0,0, (len(d) >> 8) & 0xFF, len(d) & 0xFF, scr))
-        for off in range(0, len(d), pkt):
-            c = d[off:off+pkt]
-            os.write(fd, b"\x00" + c + b"\x00"*(pkt - len(c)))
-            if pace: time.sleep(0.0015)
-        if pace:
-            # Commit each key on its own. Batching all 15 overflows the device
-            # buffer once tiles exceed ~1KB, and only the last few survive.
-            w(crt(*A_("STP")))
-            time.sleep(0.05)
-    w(crt(*A_("STP")))
-
-_pt = {}
-def _prime_tile(size, fmt):
-    """Priming only has to exercise the modes, not carry artwork. Real tiles
-    here are ruinous: BMP at 95x95 is uncompressed, ~27KB each, ~400KB a pass,
-    which floods the device before the real draw ever happens."""
-    k = (size, fmt)
-    if k not in _pt:
-        ext = "bmp" if fmt == "BMP" else "jpg"
-        f = os.path.join(tempfile.gettempdir(), f"prime_{size}_{fmt}.{ext}")
-        subprocess.run(["magick", "-size", f"{size}x{size}", "xc:#101216",
-                        "-alpha", "off", "-quality", "40", f"{fmt}:{f}"], check=True)
-        _pt[k] = open(f, "rb").read()
-    return _pt[k]
-
-# Priming: modes 0 and 1 exercise the device into an accepting state (combos 01-08).
-for m in (0, 1):
-    for f in ("JPEG", "BMP"):
-        for sz, pk in ((85, 512), (95, 1024)):
-            pass_(m, f, sz, pk, draw=True, simple=True)
-            time.sleep(2.0)   # mode switches need settling time
-# The pass that actually renders.
-pass_(MODE, FMT, SIZE, PKT, draw=True, pace=True)
-os.close(fd)
-print(f"drawn: MOD {MODE} / {FMT} {SIZE}x{SIZE} / {PKT}B")
-for i in range(1, 16):
-    if labels[i]: print(f"  {i:>2}  {labels[i].get('label','')}")
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

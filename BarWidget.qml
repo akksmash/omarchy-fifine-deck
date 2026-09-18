@@ -4,9 +4,11 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Fifine AmpliGame D6 status. deck-status prints one JSON line describing
+// Fifine AmpliGame D6 status. deck-ctl prints one JSON line describing
 // whether the deck is plugged in and whether fifine-deckd is running.
-// Click redraws the key icons (deck-icons).
+// Click asks the daemon to redraw the key icons (deck-ctl redraw).
+// Not deck-icons: that would open the device behind the daemon's back,
+// and this hardware does not tolerate two writers.
 BarWidget {
   id: root
   moduleName: "ak.fifine-deck"
@@ -41,7 +43,7 @@ BarWidget {
 
   Process {
     id: poll
-    command: ["bash", "-lc", "deck-status"]
+    command: ["bash", "-lc", "deck-ctl status --json"]
     running: true
     stdout: SplitParser {
       onRead: function (line) {
@@ -63,6 +65,6 @@ BarWidget {
   }
 
   onPressed: function () {
-    if (root.bar) root.bar.run("deck-icons")
+    if (root.bar) root.bar.run("deck-ctl redraw")
   }
 }
