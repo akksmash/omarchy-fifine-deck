@@ -62,6 +62,7 @@ class Daemon:
         self.keys = config.load()
         self.settings = config.load_settings()
         self.profile.brightness = self.settings["brightness"]
+        self.profile.max_tile_bytes = self.settings["max_tile_bytes"]
         if not initial:
             log(f"config reloaded: {len(self.keys)} keys bound")
         elif not self.keys and self.mode == "run":

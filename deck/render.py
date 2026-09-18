@@ -116,7 +116,7 @@ def art_path(key: int) -> str:
 _art_path = art_path
 
 
-def _cache_key(key, spec, size, fmt, rotate, use_art) -> str:
+def _cache_key(key, spec, size, fmt, rotate, use_art, max_bytes) -> str:
     art = art_path(key)
     stamp = None
     if use_art and os.path.exists(art):
@@ -125,7 +125,7 @@ def _cache_key(key, spec, size, fmt, rotate, use_art) -> str:
     payload = json.dumps({
         "caption": _caption_of(spec), "icon": spec.get("icon", ""),
         "color": spec.get("color", ""), "size": size, "fmt": fmt,
-        "rotate": rotate, "art": stamp,
+        "rotate": rotate, "art": stamp, "max_bytes": max_bytes,
     }, sort_keys=True)
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
@@ -145,7 +145,8 @@ def tile(key: int, spec: dict, *, size: int = 85, fmt: str = "JPEG",
     ext = "bmp" if fmt == "BMP" else "jpg"
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = os.path.join(
-        CACHE_DIR, f"t_{_cache_key(art_key, spec, size, fmt, rotate, use_art)}.{ext}")
+        CACHE_DIR,
+        f"t_{_cache_key(art_key, spec, size, fmt, rotate, use_art, max_bytes)}.{ext}")
     if os.path.exists(path):
         with open(path, "rb") as f:
             return f.read()
@@ -182,7 +183,7 @@ def tile(key: int, spec: dict, *, size: int = 85, fmt: str = "JPEG",
     base = args + ["-rotate", str(rotate), "-alpha", "off"]
     # Tiles much over ~2.5KB get dropped by the device: only the tail of a batch
     # survives. Step quality down until the tile fits that envelope.
-    for q in (92, 82, 72, 62, 54, 46):
+    for q in (92, 82, 72, 62, 54, 46, 38, 30, 24, 18):
         _run(base + ["-quality", str(q), f"{fmt}:{path}"])
         if fmt != "JPEG" or os.path.getsize(path) <= max_bytes:
             break

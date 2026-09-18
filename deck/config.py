@@ -28,6 +28,10 @@ SETTINGS = {
     "prime": "full",
     "sweeps": 2,                # times to walk the key set when drawing
     "brightness": 100,
+    # Bytes per tile. The device drops tiles over some threshold, and the only
+    # key that has ever survived a draw is also the smallest one -- so this is
+    # the knob for testing whether size, not position, is what decides.
+    "max_tile_bytes": 2300,
     "draw_on_attach": True,     # redraw whenever the deck is plugged in
     "reactivate_keys": True,    # re-enter key mode after drawing
 }
