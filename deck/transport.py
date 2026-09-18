@@ -2,11 +2,20 @@
 
 Two backends, chosen automatically:
 
-  hidapi  ctypes binding to libhidapi. Works on Linux and Windows (and macOS,
-          untested). Preferred, because it is the only one that exists off Linux.
-  hidraw  raw /dev/hidraw* reads and writes. Linux only, no dependencies at all.
-          Kept as a fallback so a Linux box with no libhidapi still works, and
-          as an escape hatch if hidapi ever misbehaves (FIFINE_DECK_BACKEND=hidraw).
+  hidraw  raw /dev/hidraw* reads and writes. Linux only, no dependencies.
+          PREFERRED ON LINUX -- see below.
+  hidapi  ctypes binding to libhidapi. The only option off Linux, and the
+          fallback on Linux when /dev/hidraw is unavailable.
+
+Why hidraw wins on Linux, despite hidapi being the obvious choice: on the Fifine
+D6, hidapi renders NOTHING. Not a single tile, ever. Raw hidraw on the same
+machine, same device, same config renders the full set. Capturing both code
+paths' complete output and diffing them byte for byte showed an identical command
+stream -- 243 packets, same opcodes, same order -- so the difference is not in
+what we ask for. Cause unknown; suspect something in how libhidapi issues the
+write. Recorded here so nobody "tidies up" by preferring hidapi again.
+
+Override either way with FIFINE_DECK_BACKEND=hidraw|hidapi.
 
 Both present the same tiny surface: write(), read(), close(). Every packet the
 protocol layer produces already begins with a 0x00 report-ID byte, which is
@@ -264,6 +273,8 @@ def backend_name() -> str:
     """Which backend enumerate_devices() will use, for diagnostics."""
     if _FORCED:
         return _FORCED
+    if sys.platform.startswith("linux") and glob.glob("/sys/class/hidraw/hidraw*"):
+        return "hidraw"
     return "hidapi" if _load_hidapi() is not None else "hidraw"
 
 
@@ -273,12 +284,13 @@ def enumerate_devices(vid: int, pid: int) -> list[DeviceInfo]:
         return _hidraw_enumerate(vid, pid)
     if _FORCED == "hidapi":
         return _hidapi_enumerate(vid, pid) or []
-    found = _hidapi_enumerate(vid, pid)
-    if found:
-        return found
-    # hidapi absent, or present but enumerating nothing (it returns an empty
-    # list rather than an error when it lacks permission on some setups).
-    return _hidraw_enumerate(vid, pid)
+    # Linux first tries hidraw, because hidapi does not render on this hardware
+    # (see the module docstring). Elsewhere hidapi is the only option.
+    if sys.platform.startswith("linux"):
+        found = _hidraw_enumerate(vid, pid)
+        if found:
+            return found
+    return _hidapi_enumerate(vid, pid) or []
 
 
 def open_device(info: DeviceInfo) -> Transport:

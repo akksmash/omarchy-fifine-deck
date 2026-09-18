@@ -109,12 +109,25 @@ that a profile did or did not work.
 
 ## Troubleshooting
 
-**The deck is lit but blank, or only the last key drew.** It has stopped
-accepting images. Unplug it and plug it back in — the daemon redraws on attach.
-If it happens routinely you are drawing too often. Note that priming volume is
-load-bearing in a way that is not fully understood: `prime = "full"` is the only
-setting yet observed to render, and the cheaper ones on the ladder in
-`deck/drivers/crt.py` are still unverified. Reports very welcome.
+**The deck is lit but blank, or only one key drew.** Three separate things have
+to be right, and each one alone produces an identically blank panel:
+
+1. **Transport.** On Linux this must be raw `hidraw`. Through `hidapi` this
+   device renders nothing at all, despite sending a byte-identical command
+   stream. `deck-ctl status` shows which backend is in use.
+2. **Priming.** `prime = "full"`. The BMP priming passes are what engage `MOD 2`;
+   without them the device ignores even the clear command and simply keeps the
+   factory demo images it boots with.
+3. **Tile size.** `max_tile_bytes = 1200`. At ~2300B exactly one key rendered;
+   at 1500B, fourteen of fifteen. There is no visible quality loss at 85x85.
+
+**It shows unfamiliar icons I never configured.** Those are the manufacturer's
+demo images, which the deck displays at power-on. A `full`-priming draw takes
+about 26 seconds, so they are what you see while it works. Wait for
+`icons drawn` in `journalctl --user -u fifine-deckd` before judging a draw.
+
+**The bottom row fills first.** Normal. Screens are numbered bottom-up while keys
+are numbered top-down, so an ascending draw paints the bottom row first.
 
 **Nothing at all, ever.** Check the udev rule took: `ls -l /dev/hidraw*` should
 show the deck's nodes owned by you. Then `deck-ctl probe`.
