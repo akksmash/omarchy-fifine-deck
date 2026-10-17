@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ak.fifine-deck",
   "name": "Fifine D6 Deck",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "AK / STEVE-1",
   "description": "Status and control for the Fifine AmpliGame D6 stream deck. Shows whether the deck is connected and its key daemon is running; click to redraw the key icons. Backed by a reverse-engineered driver - the D6 needs no vendor software on Linux.",
   "kinds": [

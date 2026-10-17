@@ -54,6 +54,14 @@ SETTINGS = {
     # about a second, but that is not the same as being ready to render, and a
     # draw issued immediately has been seen to produce a blank panel.
     "attach_settle_secs": 5.0,
+    # Seconds to wait after each priming image. Streamed with no gap, the last
+    # images of a pass are lost: priming alone put up 13 of 15, missing exactly
+    # the final two. At 0.30 it puts up all 15 (verified by eye, 2026-10-17).
+    "prime_pace": 0.30,
+    # Run the per-key draw after priming? "full" priming already pushes the real
+    # artwork, so with prime_pace set this is redundant -- and it was harmful:
+    # it wiped the primed icons and left only its own last three screens.
+    "draw_after_prime": False,
     "draw_on_attach": True,     # redraw whenever the deck is plugged in
     "reactivate_keys": True,    # re-enter key mode after drawing
 }

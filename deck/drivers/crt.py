@@ -20,6 +20,8 @@ Two hard-won facts, both of which produce convincing false negatives:
 """
 from __future__ import annotations
 
+import os
+import sys
 import time
 
 from . import Driver
@@ -150,7 +152,8 @@ class CrtDriver(Driver):
         self._begin(MODE_DISPLAY, self.profile.packet)
         self._cmd(crt(*_a("STP")))
 
-    def prime(self, strategy: str = "light", tiles: dict[int, bytes] | None = None) -> None:
+    def prime(self, strategy: str = "light", tiles: dict[int, bytes] | None = None,
+              pace: float = 0.0) -> None:
         """Walk the device through modes 0 and 1 so MOD 2 will render.
 
         Skipping this on a cold device produces a lit backlight and no image,
@@ -168,11 +171,11 @@ class CrtDriver(Driver):
                 for size, packet in geometries:
                     self._begin(mode, packet)
                     if strategy != "commands":
-                        self._prime_images(size, fmt, packet, strategy, tiles)
+                        self._prime_images(size, fmt, packet, strategy, tiles, pace)
                     self._cmd(crt(*_a("STP")), packet)
                     time.sleep(2.0)        # mode switches need settling time
 
-    def _prime_images(self, size, fmt, packet, strategy, tiles) -> None:
+    def _prime_images(self, size, fmt, packet, strategy, tiles, pace=0.0) -> None:
         from .. import render
         p = self.profile
         for screen in range(1, p.keys + 1):
@@ -185,6 +188,8 @@ class CrtDriver(Driver):
             self._cmd(crt(*_a("BAT"), 0, 0,
                           (len(data) >> 8) & 0xFF, len(data) & 0xFF, screen), packet)
             self._chunks(data, packet)
+            if pace:
+                time.sleep(pace)
 
     def draw(self, tiles: dict[int, bytes], sweeps: int = 1,
              key_delay: float = 0.30, packet_pace: float = 0.0015,
@@ -231,6 +236,9 @@ class CrtDriver(Driver):
                 data = tiles.get(key)
                 if not data:
                     continue
+                if os.environ.get("DECK_TRACE"):
+                    # Journal timestamps line this up with what is seen on the panel.
+                    print(f"trace: screen {screen} (key {key}) {len(data)}B", file=sys.stderr, flush=True)
                 self._cmd(crt(*_a("BAT"), 0, 0,
                               (len(data) >> 8) & 0xFF, len(data) & 0xFF, screen))
                 self._chunks(data, p.packet, pace=packet_pace)

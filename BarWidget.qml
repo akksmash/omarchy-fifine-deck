@@ -9,6 +9,10 @@ import qs.Ui
 // Click asks the daemon to redraw the key icons (deck-ctl redraw).
 // Not deck-icons: that would open the device behind the daemon's back,
 // and this hardware does not tolerate two writers.
+//
+// The visible content lives on a child WidgetButton: Ui/BarWidget is a bare
+// Item that only carries bar/moduleName/settings, so text, tooltipText,
+// colour and the pressed signal all belong to the button, not to the root.
 BarWidget {
   id: root
   moduleName: "ak.fifine-deck"
@@ -20,6 +24,9 @@ BarWidget {
   property int intervalSeconds: Math.max(5, setting("intervalSeconds", 15))
 
   readonly property bool healthy: present && daemon === "active"
+
+  // A vertical bar has no room for the text label regardless of the setting.
+  readonly property bool labelWanted: showLabel && !vertical
 
   function glyph() {
     if (!present) return "󰌌"
@@ -37,9 +44,21 @@ BarWidget {
     return "Fifine D6 · " + keyCount + " keys bound\nClick to redraw icons"
   }
 
-  text: showLabel ? (glyph() + "  " + label()) : glyph()
-  tooltipText: tip()
-  color: healthy ? Color.foreground : (present ? Color.muted : Color.urgent)
+  implicitWidth: button.implicitWidth
+  implicitHeight: button.implicitHeight
+
+  WidgetButton {
+    id: button
+    anchors.fill: parent
+    bar: root.bar
+    text: root.labelWanted ? (root.glyph() + "  " + root.label()) : root.glyph()
+    tooltipText: root.tip()
+    foreground: root.healthy ? Color.foreground : (root.present ? Color.muted : Color.urgent)
+    useActiveColor: false
+    onPressed: function (b) {
+      if (root.bar) root.bar.run("deck-ctl redraw")
+    }
+  }
 
   Process {
     id: poll
@@ -62,9 +81,5 @@ BarWidget {
     running: true
     repeat: true
     onTriggered: poll.running = true
-  }
-
-  onPressed: function () {
-    if (root.bar) root.bar.run("deck-ctl redraw")
   }
 }

@@ -84,11 +84,16 @@ class Daemon:
             tiles = render.render_all(self.keys, self.profile)
             strategy = self.settings["prime"]
             log(f"drawing {len(tiles)} icons ({why}, prime={strategy})...")
-            dev.prime(strategy, tiles if strategy == "full" else None)
-            dev.draw(tiles, sweeps=self.settings["sweeps"],
-                     key_delay=self.settings["key_delay"],
-                     packet_pace=self.settings["packet_pace"],
-                     batch=self.settings["batch_size"])
+            dev.prime(strategy, tiles if strategy == "full" else None,
+                      pace=self.settings["prime_pace"])
+            if self.settings["draw_after_prime"]:
+                log(f"primed; drawing with key_delay={self.settings['key_delay']}")
+                dev.draw(tiles, sweeps=self.settings["sweeps"],
+                         key_delay=self.settings["key_delay"],
+                         packet_pace=self.settings["packet_pace"],
+                         batch=self.settings["batch_size"])
+            else:
+                log(f"primed (prime_pace={self.settings['prime_pace']}); per-key draw skipped")
             if self.settings["reactivate_keys"]:
                 # Back to key-reporting mode, or presses stop arriving.
                 dev.activate_keys()

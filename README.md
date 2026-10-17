@@ -143,20 +143,22 @@ to be right, and each one alone produces an identically blank panel:
    factory demo images it boots with.
 3. **Tile size.** `max_tile_bytes = 1200`. At ~2300B exactly one key rendered;
    at 1500B, fourteen of fifteen. There is no visible quality loss at 85x85.
-4. **One image per display session.** `batch_size = 1`. This is the single most
-   important setting. However many images the device will accept in one session
-   — and that number falls with use, from 15 down to 1 over an evening — only
-   the **last** ones survive. Give every screen its own session and that
-   capacity stops mattering, because each image is the last of its own batch.
-   Do not clear between sessions (`clear_first` is off): `CLE` wipes whatever
-   the previous sessions landed.
+4. **One paced pass, then stop.** `prime_pace = 0.30`, `draw_after_prime = false`.
+   The `full` priming pass already sends the real artwork, so it *is* the draw.
+   Streamed without a gap, the last images of the pass get lost (13 of 15 up,
+   missing exactly the final two); a 0.30s pause after each image lands all 15.
+   The separate per-key draw that used to follow was not just redundant but
+   harmful: it wiped the primed icons and left only its own last three screens.
+   Verified by eye on 2026-10-17, three plug-ins in a row.
 
-Two things that look like fixes and are not, both measured: raising `key_delay`
-to 0.30 renders **nothing**, and `sweeps = 1` renders **nothing**.
+Earlier versions of this section described the device as degrading with every
+draw and needing hours of rest. Those conclusions came from back-to-back tests
+of a driver that sent far more than needed; with the paced single pass the
+problem went away. A few seconds unplugged fully resets the deck.
 
 **It shows unfamiliar icons I never configured.** Those are the manufacturer's
-demo images, which the deck displays at power-on. A `full`-priming draw takes
-about 26 seconds, so they are what you see while it works. Wait for
+demo images, which the deck displays at power-on. A paced `full` draw takes
+about a minute, so they are what you see while it works. Wait for
 `icons drawn` in `journalctl --user -u fifine-deckd` before judging a draw.
 
 **The bottom row fills first.** Normal. Screens are numbered bottom-up while keys

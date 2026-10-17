@@ -131,17 +131,15 @@ caption = "Menu"
 art = "the Arch Linux logo"
 
 [deck]
-# THE RULE: one draw per physical power cycle. The device degrades monotonically
-# with every draw -- 15 keys, then 4, then 0, on identical settings -- and a USB
-# bus reset does NOT clear it. Only unplugging does. Every A/B test run back to
-# back is therefore measuring draw-number, not the setting.
-#
-# So: draw once on attach, and do not redraw unless you mean it.
+# One paced priming pass draws everything. Drawing on attach is enough; a few
+# seconds unplugged fully resets the deck if it ever needs it.
 prime = "full"          # the BMP passes are what engage MOD 2
 sweeps = 1              # ONE sweep: half the data, and the 2nd sweep leaves
                         # screens it cannot finish blank
 key_delay = 0.30        # slow single sweep rendered 15/15 as a first draw
-batch_size = 1   # ONE image per session - this is the fix
+batch_size = 1          # only used when draw_after_prime = true
+prime_pace = 0.30       # pause after each priming image; without it the last two are lost
+draw_after_prime = false  # priming already draws the art; the extra draw wiped it
 max_tile_bytes = 1200   # at 2300B only one key rendered
 packet_pace = 0.0015
 keepalive_secs = 0
